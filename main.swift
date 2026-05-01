@@ -322,106 +322,588 @@ final class KeyMonitor: ObservableObject {
     }
 }
 
-// MARK: - Views
+// MARK: - Design tokens (from Cladesign_export2/tokens.json)
 
-struct EventRow: View {
-    let event: KeyEvent
+extension Color {
+    static let bgWindow      = Color(red: 0.043, green: 0.063, blue: 0.188) // #0B1030
+    static let bgWindowGrad  = Color(red: 0.090, green: 0.075, blue: 0.278) // #171347
+    static let bgCard        = Color(red: 0.055, green: 0.059, blue: 0.141) // #0E0F24
+    static let bgCardHover   = Color(red: 0.075, green: 0.078, blue: 0.157) // #131428
+    static let accentCyan    = Color(red: 0.357, green: 0.820, blue: 1.000) // #5BD1FF
+    static let accentCyan2   = Color(red: 0.180, green: 0.545, blue: 1.000) // #2E8BFF
+    static let downGreen     = Color(red: 0.357, green: 1.000, blue: 0.545) // #5BFF8B
+    static let upOrange      = Color(red: 1.000, green: 0.659, blue: 0.357) // #FFA85B
+    static let peakRed       = Color(red: 1.000, green: 0.373, blue: 0.373) // #FF5F5F
+    static let textPrimary   = Color(red: 0.925, green: 0.933, blue: 1.000) // #ECEEFF
+    static let textSecondary = Color(red: 0.490, green: 0.502, blue: 0.565) // #7D8090
+    static let knobLight     = Color(red: 0.227, green: 0.239, blue: 0.290) // #3A3D4A
+    static let knobDark      = Color(red: 0.114, green: 0.122, blue: 0.157) // #1D1F28
+    static let keycapTopL    = Color(red: 0.988, green: 0.988, blue: 0.996) // #FCFCFE
+    static let keycapTopD    = Color(red: 0.824, green: 0.824, blue: 0.871) // #D2D2DE
+    static let keycapSideL   = Color(red: 0.651, green: 0.651, blue: 0.722) // #A6A6B8
+    static let keycapSideD   = Color(red: 0.353, green: 0.353, blue: 0.439) // #5A5A70
+    static let dividerLine   = Color.white.opacity(0.04)
+}
+
+// MARK: - Window background (gradient + subtle vignette)
+
+struct WindowBackground: View {
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Text(event.direction)
-                .font(.system(size: 24, weight: .light))
-                .foregroundColor(event.direction == "down" ? .green : .orange)
-                .frame(width: 70, alignment: .leading)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(event.label)
-                    .font(.system(size: 14, design: .monospaced))
-                    .foregroundColor(.white)
-                if !event.flagsText.isEmpty {
-                    Text("flags \(event.flagsText)")
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundColor(.gray)
-                }
-                if let extra = event.extra {
-                    Text(extra)
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundColor(.gray)
-                }
-            }
-            Spacer()
-            VStack(alignment: .trailing, spacing: 2) {
-                Text(String(format: "usage page: %d (0x%04x)", event.usagePage, event.usagePage))
-                Text(String(format: "usage: %d (0x%04x)", event.usage, event.usage))
-            }
-            .font(.system(size: 11, design: .monospaced))
-            .foregroundColor(.gray)
+        ZStack {
+            LinearGradient(
+                colors: [.bgWindowGrad, .bgWindow],
+                startPoint: .top, endPoint: .bottom
+            )
+            RadialGradient(
+                colors: [Color.accentCyan2.opacity(0.10), .clear],
+                center: .topLeading,
+                startRadius: 0, endRadius: 800
+            )
+            .blendMode(.plusLighter)
         }
-        .padding(.vertical, 2)
+        .ignoresSafeArea()
     }
 }
 
-struct ContentView: View {
-    @StateObject private var store = EventStore()
-    @StateObject private var sound = SoundPlayer()
-    @StateObject private var monitor = KeyMonitor()
-    @State private var soundEnabled = true
+// MARK: - Volume knob
+
+struct VolumeKnob: View {
+    @Binding var value: Float            // 0 ... 1.5
+    let maxValue: Float                  // 1.5
+    @State private var dragStartValue: Float? = nil
+
+    private let diameter: CGFloat = 84
+    private let arcStart: Double = -135
+    private let arcEnd: Double   =  135
+    private let strokeWidth: CGFloat = 3
+
+    private var pct: Int { Int((value * 100).rounded()) }
+    private var fraction: Double { Double(value / maxValue) }   // 0...1
+    private var fractionAt100: Double { Double(1.0 / maxValue) } // 1.0/1.5
+    private var indicatorAngle: Angle {
+        .degrees(arcStart + (arcEnd - arcStart) * fraction)
+    }
+    private var isPeak: Bool { value > 1.0 }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 14) {
-                Toggle("Sound", isOn: $soundEnabled).toggleStyle(.switch)
-                Picker("", selection: $sound.tone) {
+        ZStack {
+            // outer drop shadow base
+            Circle()
+                .fill(Color.black.opacity(0.5))
+                .frame(width: diameter + 8, height: diameter + 8)
+                .blur(radius: 8)
+                .offset(y: 4)
+
+            // background (un-lit) arc
+            ArcShape(start: arcStart, end: arcEnd)
+                .stroke(Color.white.opacity(0.06), style: StrokeStyle(lineWidth: strokeWidth, lineCap: .round))
+                .frame(width: diameter, height: diameter)
+
+            // lit arc (0% → 100% in cyan)
+            ArcShape(
+                start: arcStart,
+                end: arcStart + (arcEnd - arcStart) * min(fraction, fractionAt100)
+            )
+            .stroke(
+                LinearGradient(
+                    colors: [.accentCyan2, .accentCyan],
+                    startPoint: .leading, endPoint: .trailing
+                ),
+                style: StrokeStyle(lineWidth: strokeWidth, lineCap: .round)
+            )
+            .frame(width: diameter, height: diameter)
+            .shadow(color: .accentCyan.opacity(0.55), radius: 6)
+
+            // peak arc (100% → current in orange→red), shown when value > 100%
+            if isPeak {
+                ArcShape(
+                    start: arcStart + (arcEnd - arcStart) * fractionAt100,
+                    end:   arcStart + (arcEnd - arcStart) * fraction
+                )
+                .stroke(
+                    LinearGradient(
+                        colors: [.upOrange, .peakRed],
+                        startPoint: .leading, endPoint: .trailing
+                    ),
+                    style: StrokeStyle(lineWidth: strokeWidth, lineCap: .round)
+                )
+                .frame(width: diameter, height: diameter)
+                .shadow(color: .peakRed.opacity(0.55), radius: 6)
+            }
+
+            // knob body — brushed metal radial gradient
+            Circle()
+                .fill(
+                    RadialGradient(
+                        colors: [
+                            Color(red: 0.329, green: 0.341, blue: 0.400),
+                            Color(red: 0.173, green: 0.180, blue: 0.220),
+                            Color(red: 0.082, green: 0.086, blue: 0.118),
+                        ],
+                        center: .init(x: 0.35, y: 0.30),
+                        startRadius: 4, endRadius: diameter * 0.6
+                    )
+                )
+                .frame(width: diameter - 24, height: diameter - 24)
+                .overlay(
+                    Circle()
+                        .strokeBorder(
+                            LinearGradient(
+                                colors: [Color.white.opacity(0.18), Color.black.opacity(0.6)],
+                                startPoint: .top, endPoint: .bottom
+                            ),
+                            lineWidth: 1
+                        )
+                )
+                .shadow(color: .black.opacity(0.6), radius: 4, y: 2)
+
+            // indicator line
+            Capsule()
+                .fill(isPeak ? Color.peakRed : Color.accentCyan)
+                .frame(width: 2, height: 14)
+                .shadow(color: (isPeak ? Color.peakRed : Color.accentCyan).opacity(0.8), radius: 4)
+                .offset(y: -(diameter - 24) / 2 + 10)
+                .rotationEffect(indicatorAngle)
+        }
+        .frame(width: diameter, height: diameter)
+        .contentShape(Circle())
+        .gesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { drag in
+                    if dragStartValue == nil { dragStartValue = value }
+                    let dy = Float(drag.translation.height)
+                    // 240 px vertical = full 0..1.5 range; up = louder
+                    let delta = -dy / 240 * maxValue
+                    let next = (dragStartValue ?? value) + delta
+                    value = max(0, min(maxValue, next))
+                }
+                .onEnded { _ in dragStartValue = nil }
+        )
+        .animation(.easeOut(duration: 0.10), value: value)
+    }
+}
+
+private struct ArcShape: Shape {
+    let start: Double  // degrees
+    let end: Double
+
+    func path(in rect: CGRect) -> Path {
+        var p = Path()
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+        let radius = min(rect.width, rect.height) / 2 - 1.5
+        // SwiftUI 0° = trailing(right), increases clockwise. Convert from
+        // the design convention where 0° = bottom (knob "off") and -135/+135
+        // are the arc extremes:
+        // Map design angle → SwiftUI angle: swift = design + 90
+        p.addArc(
+            center: center,
+            radius: radius,
+            startAngle: .degrees(start + 90),
+            endAngle: .degrees(end + 90),
+            clockwise: false
+        )
+        return p
+    }
+}
+
+// MARK: - Power button (replaces Sound toggle)
+
+struct PowerButton: View {
+    @Binding var isOn: Bool
+    @State private var pressed = false
+    private let size: CGFloat = 56
+    private let ledSize: CGFloat = 6
+
+    var body: some View {
+        ZStack {
+            // body
+            Circle()
+                .fill(
+                    RadialGradient(
+                        colors: [
+                            Color(red: 0.294, green: 0.310, blue: 0.369),
+                            Color(red: 0.165, green: 0.173, blue: 0.220),
+                            Color(red: 0.082, green: 0.086, blue: 0.118),
+                        ],
+                        center: .init(x: 0.35, y: 0.30),
+                        startRadius: 2, endRadius: size * 0.6
+                    )
+                )
+                .frame(width: size, height: size)
+                .overlay(
+                    Circle()
+                        .strokeBorder(
+                            LinearGradient(
+                                colors: [Color.white.opacity(0.20), Color.black.opacity(0.7)],
+                                startPoint: .top, endPoint: .bottom
+                            ),
+                            lineWidth: 1
+                        )
+                )
+                .shadow(color: .black.opacity(0.6), radius: 4, y: 2)
+
+            // power glyph
+            ZStack {
+                Circle()
+                    .trim(from: 0.10, to: 0.90)
+                    .stroke(
+                        isOn ? Color.downGreen.opacity(0.9) : Color.textSecondary,
+                        style: StrokeStyle(lineWidth: 2, lineCap: .round)
+                    )
+                    .rotationEffect(.degrees(90))
+                    .frame(width: 18, height: 18)
+                Capsule()
+                    .fill(isOn ? Color.downGreen.opacity(0.9) : Color.textSecondary)
+                    .frame(width: 2, height: 9)
+                    .offset(y: -4)
+            }
+            .shadow(color: isOn ? Color.downGreen.opacity(0.6) : .clear, radius: 4)
+
+            // LED dot near top
+            Circle()
+                .fill(isOn ? Color.downGreen : Color.white.opacity(0.10))
+                .frame(width: ledSize, height: ledSize)
+                .shadow(color: isOn ? Color.downGreen : .clear, radius: 5)
+                .offset(y: -size/2 + 8)
+        }
+        .scaleEffect(pressed ? 0.96 : 1.0)
+        .animation(.easeOut(duration: 0.08), value: pressed)
+        .onTapGesture { isOn.toggle() }
+        .gesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { _ in pressed = true }
+                .onEnded { _ in pressed = false }
+        )
+    }
+}
+
+// MARK: - Keycap button
+
+struct Keycap<Label: View>: View {
+    let selected: Bool
+    let width: CGFloat
+    let height: CGFloat
+    let action: () -> Void
+    @ViewBuilder let label: () -> Label
+    @State private var pressed = false
+    @State private var hovering = false
+
+    init(selected: Bool = false,
+         width: CGFloat = 88,
+         height: CGFloat = 48,
+         action: @escaping () -> Void = {},
+         @ViewBuilder label: @escaping () -> Label) {
+        self.selected = selected
+        self.width = width
+        self.height = height
+        self.action = action
+        self.label = label
+    }
+
+    var body: some View {
+        ZStack {
+            // body fill
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: selected
+                            ? [.keycapTopL, .keycapTopD]
+                            : [Color(red: 0.125, green: 0.133, blue: 0.180),
+                               Color(red: 0.082, green: 0.086, blue: 0.118)],
+                        startPoint: .top, endPoint: .bottom
+                    )
+                )
+            // top highlight (1px white)
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .strokeBorder(
+                    LinearGradient(
+                        colors: selected
+                            ? [Color.white.opacity(0.95), Color.white.opacity(0.0)]
+                            : [Color.white.opacity(0.10), Color.black.opacity(0.30)],
+                        startPoint: .top, endPoint: .bottom
+                    ),
+                    lineWidth: 1
+                )
+            // selected accent border + outer glow
+            if selected {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .strokeBorder(Color.accentCyan.opacity(0.55), lineWidth: 1.5)
+                    .shadow(color: Color.accentCyan.opacity(0.6), radius: 8)
+            }
+            label()
+                .foregroundColor(selected ? Color.black.opacity(0.85) : .textPrimary)
+        }
+        .frame(width: width, height: height)
+        .scaleEffect(pressed ? 0.96 : 1.0)
+        .animation(.easeOut(duration: 0.08), value: pressed)
+        .onHover { hovering = $0 }
+        .onTapGesture { action() }
+        .gesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { _ in pressed = true }
+                .onEnded { _ in pressed = false }
+        )
+        .brightness(hovering && !selected ? 0.04 : 0)
+    }
+}
+
+// MARK: - Top control bar
+
+struct ControlBar: View {
+    @ObservedObject var sound: SoundPlayer
+    @ObservedObject var store: EventStore
+    @Binding var soundEnabled: Bool
+
+    var body: some View {
+        HStack(spacing: 28) {
+            // Sound power
+            VStack(spacing: 4) {
+                PowerButton(isOn: $soundEnabled)
+                Text("SOUND")
+                    .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                    .tracking(2)
+                    .foregroundColor(.textSecondary)
+            }
+
+            verticalSep
+
+            // Tone selector
+            VStack(alignment: .leading, spacing: 6) {
+                Text("TONE")
+                    .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                    .tracking(2)
+                    .foregroundColor(.textSecondary)
+                HStack(spacing: 6) {
                     ForEach(SoundPlayer.Tone.allCases) { t in
-                        Text(t.rawValue.capitalized).tag(t)
+                        Keycap(
+                            selected: sound.tone == t,
+                            width: 76, height: 40,
+                            action: { sound.tone = t },
+                            label: {
+                                Text(t.rawValue.uppercased())
+                                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                                    .tracking(1)
+                            }
+                        )
                     }
                 }
-                .pickerStyle(.segmented)
-                .frame(width: 280)
-                .labelsHidden()
-                HStack(spacing: 6) {
-                    Image(systemName: "speaker.fill").foregroundColor(.secondary)
-                    Slider(value: $sound.volume, in: 0...SoundPlayer.maxVolume)
-                        .frame(width: 160)
-                    Image(systemName: "speaker.wave.3.fill").foregroundColor(.secondary)
-                    Text("\(Int(sound.volume * 100))%")
-                        .font(.system(size: 11, design: .monospaced))
-                        .frame(width: 40, alignment: .trailing)
-                        .foregroundColor(.secondary)
+            }
+
+            verticalSep
+
+            // Volume knob
+            VStack(spacing: 4) {
+                VolumeKnob(value: $sound.volume, maxValue: SoundPlayer.maxVolume)
+                Text("\(Int(sound.volume * 100))%")
+                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .foregroundColor(sound.volume > 1.0 ? .peakRed : .textPrimary)
+                    .monospacedDigit()
+            }
+
+            Spacer()
+
+            // Action buttons
+            HStack(spacing: 8) {
+                Keycap(width: 72, height: 40, action: { sound.play() }) {
+                    Text("TEST")
+                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        .tracking(1)
                 }
-                Spacer()
-                Button("Test")  { sound.play() }
-                Button("Copy")  { store.copyToPasteboard() }
-                Button("Clear") { store.clear() }
+                Keycap(width: 72, height: 40, action: { store.copyToPasteboard() }) {
+                    Text("COPY")
+                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        .tracking(1)
+                }
+                Keycap(width: 72, height: 40, action: { store.clear() }) {
+                    Text("CLEAR")
+                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        .tracking(1)
+                }
             }
-            .padding(.horizontal)
-            .padding(.top, 8)
+        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 18)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color.bgCard.opacity(0.6))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .strokeBorder(Color.white.opacity(0.04), lineWidth: 1)
+                )
+        )
+    }
 
-            Divider()
+    private var verticalSep: some View {
+        Rectangle()
+            .fill(Color.white.opacity(0.06))
+            .frame(width: 1, height: 64)
+    }
+}
 
-            HStack {
-                Text("Keyboard & pointing events")
-                    .font(.caption).foregroundColor(.secondary)
-                Spacer()
+// MARK: - Event row
+
+private let kModGlyphs: [(needle: String, glyph: String)] = [
+    ("caps_lock", "⇪"),
+    ("shift", "⇧"),
+    ("control", "⌃"),
+    ("option", "⌥"),
+    ("command", "⌘"),
+    ("fn", "fn"),
+]
+
+struct EventRow: View {
+    let event: KeyEvent
+    @State private var hovering = false
+    @State private var flashOpacity: Double = 1.0
+
+    private var accentColor: Color { event.direction == "down" ? .downGreen : .upOrange }
+
+    private var modGlyphs: [String] {
+        let parts = event.flagsText.split(separator: ",").map(String.init)
+        return kModGlyphs
+            .filter { parts.contains($0.needle) }
+            .map { $0.glyph }
+    }
+
+    private var jsonKey: String {
+        // {"key_code":"left_shift"} → split into "key_code" and "left_shift"
+        // for syntax-highlighting. Same for pointing_button.
+        let s = event.label
+        guard let openQuote = s.firstIndex(of: "\""),
+              let colon = s.firstIndex(of: ":") else { return s }
+        let keyStart = s.index(after: openQuote)
+        let keyEnd = s.index(before: colon)
+        guard keyStart < keyEnd else { return s }
+        return String(s[keyStart..<keyEnd]).trimmingCharacters(in: CharacterSet(charactersIn: "\""))
+    }
+
+    private var jsonValue: String {
+        let s = event.label
+        guard let colon = s.firstIndex(of: ":") else { return "" }
+        let after = s.index(after: colon)
+        let inner = String(s[after...])
+            .trimmingCharacters(in: CharacterSet(charactersIn: "{}\""))
+        return inner
+    }
+
+    var body: some View {
+        HStack(spacing: 0) {
+            // accent bar w/ glow
+            Rectangle()
+                .fill(accentColor)
+                .frame(width: 4, height: 56)
+                .shadow(color: accentColor.opacity(0.8 * flashOpacity), radius: 8)
+                .opacity(0.6 + 0.4 * flashOpacity)
+
+            // direction
+            Text(event.direction)
+                .font(.system(size: 22, weight: .light, design: .monospaced))
+                .foregroundColor(accentColor)
+                .frame(width: 70, alignment: .leading)
+                .padding(.leading, 14)
+
+            // code + meta
+            VStack(alignment: .leading, spacing: 3) {
+                // syntax-highlighted JSON
+                HStack(spacing: 0) {
+                    Text("{").foregroundColor(.textSecondary)
+                    Text("\"").foregroundColor(.textSecondary)
+                    Text(jsonKey).foregroundColor(.accentCyan)
+                    Text("\"").foregroundColor(.textSecondary)
+                    Text(":").foregroundColor(.textSecondary)
+                    Text("\"").foregroundColor(.textSecondary)
+                    Text(jsonValue).foregroundColor(.textPrimary)
+                    Text("\"").foregroundColor(.textSecondary)
+                    Text("}").foregroundColor(.textSecondary)
+                }
+                .font(.system(size: 14, weight: .medium, design: .monospaced))
+
+                HStack(spacing: 8) {
+                    if !modGlyphs.isEmpty {
+                        HStack(spacing: 4) {
+                            ForEach(modGlyphs, id: \.self) { g in
+                                Text(g)
+                                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                                    .foregroundColor(.textPrimary)
+                                    .frame(minWidth: 16, minHeight: 16)
+                                    .padding(.horizontal, 4)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                            .fill(Color.white.opacity(0.06))
+                                    )
+                            }
+                        }
+                    }
+                    if let extra = event.extra {
+                        Text(extra)
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundColor(.textSecondary)
+                    }
+                }
             }
-            .padding(.horizontal)
+            .padding(.leading, 4)
 
+            Spacer()
+
+            // page / usage on right
+            HStack(alignment: .center, spacing: 16) {
+                pageOrUsageColumn(label: "PAGE",
+                                  value: String(format: "%d (0x%04x)", event.usagePage, event.usagePage))
+                pageOrUsageColumn(label: "USAGE",
+                                  value: String(format: "%d (0x%04x)", event.usage, event.usage))
+            }
+            .padding(.trailing, 18)
+        }
+        .frame(height: 56)
+        .background(
+            (hovering ? Color.accentCyan.opacity(0.04) : Color.clear)
+                .overlay(
+                    Rectangle()
+                        .fill(Color.white.opacity(0.04))
+                        .frame(height: 0.5)
+                        .frame(maxHeight: .infinity, alignment: .bottom)
+                )
+        )
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
+        .onAppear {
+            // new-row flash (accent bar opacity fade-in)
+            flashOpacity = 0
+            withAnimation(.easeOut(duration: 0.25)) {
+                flashOpacity = 1.0
+            }
+        }
+    }
+
+    private func pageOrUsageColumn(label: String, value: String) -> some View {
+        HStack(spacing: 6) {
+            Text(label)
+                .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                .tracking(2)
+                .foregroundColor(.textSecondary)
+            Text(value)
+                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                .foregroundColor(.textPrimary)
+                .monospacedDigit()
+        }
+    }
+}
+
+// MARK: - Event log container with scanline overlay
+
+struct EventLog: View {
+    @ObservedObject var store: EventStore
+
+    var body: some View {
+        ZStack(alignment: .top) {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         ForEach(store.events) { e in
-                            EventRow(event: e)
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 4)
-                                .background(
-                                    Color.white.opacity(0.02)
-                                        .overlay(Rectangle().frame(height: 0.5)
-                                            .foregroundColor(.white.opacity(0.06))
-                                            .frame(maxHeight: .infinity, alignment: .bottom))
-                                )
-                                .id(e.id)
+                            EventRow(event: e).id(e.id)
                         }
                     }
                 }
-                .background(Color.black)
                 .onChange(of: store.events.count) { _ in
                     if let last = store.events.last {
                         withAnimation(.linear(duration: 0.08)) {
@@ -430,8 +912,88 @@ struct ContentView: View {
                     }
                 }
             }
+            // CRT scanline (very subtle)
+            ScanlineOverlay()
+                .allowsHitTesting(false)
         }
-        .frame(minWidth: 820, minHeight: 540)
+        .background(
+            ZStack {
+                LinearGradient(
+                    colors: [
+                        Color(red: 0.031, green: 0.035, blue: 0.102),
+                        Color(red: 0.055, green: 0.059, blue: 0.141),
+                    ],
+                    startPoint: .top, endPoint: .bottom
+                )
+                // very faint noise texture via overlapping circles? Simpler: omit.
+            }
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.04), lineWidth: 1)
+        )
+    }
+}
+
+struct ScanlineOverlay: View {
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0/60.0)) { context in
+            GeometryReader { geo in
+                let elapsed = context.date.timeIntervalSinceReferenceDate
+                let cycle: Double = 6.0
+                let progress = (elapsed.truncatingRemainder(dividingBy: cycle)) / cycle
+                let y = geo.size.height * (1.0 - progress)
+                LinearGradient(
+                    colors: [.clear, Color.accentCyan.opacity(0.15), .clear],
+                    startPoint: .top, endPoint: .bottom
+                )
+                .frame(height: 60)
+                .offset(y: y - 30)
+                .blendMode(.plusLighter)
+            }
+        }
+    }
+}
+
+// MARK: - Root
+
+struct ContentView: View {
+    @StateObject private var store = EventStore()
+    @StateObject private var sound = SoundPlayer()
+    @StateObject private var monitor = KeyMonitor()
+    @State private var soundEnabled = true
+
+    var body: some View {
+        ZStack {
+            WindowBackground()
+
+            VStack(spacing: 14) {
+                // Top spacer for hidden title bar drag area (28pt)
+                Color.clear.frame(height: 22)
+
+                ControlBar(sound: sound, store: store, soundEnabled: $soundEnabled)
+                    .padding(.horizontal, 18)
+
+                HStack {
+                    Text("KEYBOARD & POINTING EVENTS")
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .tracking(3)
+                        .foregroundColor(.textSecondary)
+                    Spacer()
+                    Text("\(store.events.count) events")
+                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                        .tracking(1)
+                        .foregroundColor(.textSecondary)
+                }
+                .padding(.horizontal, 22)
+
+                EventLog(store: store)
+                    .padding(.horizontal, 18)
+                    .padding(.bottom, 18)
+            }
+        }
+        .frame(minWidth: 940, minHeight: 600)
         .onAppear {
             monitor.onEvent = { [weak store, weak sound] e in
                 store?.add(e)
@@ -446,8 +1008,10 @@ struct ContentView: View {
 struct KeyCheckApp: App {
     var body: some Scene {
         WindowGroup("KeyCheck") {
-            ContentView().preferredColorScheme(.dark)
+            ContentView()
+                .preferredColorScheme(.dark)
         }
+        .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentMinSize)
     }
 }
