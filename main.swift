@@ -198,139 +198,37 @@ final class SoundPlayer: ObservableObject {
     }
 }
 
-// MARK: - Event Monitor
-//
-// Modes:
-//   captureMode = false (default):
-//     NSEvent.addLocalMonitorForEvents — needs no permission. Captures keys/
-//     mouse only when KeyCheck is the focused app. Events also flow to the
-//     focused control normally.
-//
-//   captureMode = true:
-//     CGEventTap at session level — needs Accessibility permission. CONSUMES
-//     all keyboard events (returns nil), so system shortcuts (Cmd+Space,
-//     Cmd+Tab fallthrough aside, Claude hotkey, etc.) won't fire while ON.
-//     Mouse still uses the NSEvent path so the user can click the toggle off.
+// MARK: - Event Monitor (NSEvent local — no permission required)
 
 @MainActor
 final class KeyMonitor: ObservableObject {
-    @Published var captureMode: Bool = false {
-        didSet {
-            if oldValue != captureMode { applyCaptureMode() }
-        }
-    }
-    @Published var captureError: String?
-    @Published var captureActive: Bool = false  // true once tap is installed and running
-
     var onEvent: ((KeyEvent) -> Void)?
-
-    private var nsMonitor: Any?
-    private var cgTap: CFMachPort?
-    private var cgSource: CFRunLoopSource?
+    private var localMonitor: Any?
 
     func start() {
-        installNSMonitor()
-    }
-
-    func stop() {
-        removeNSMonitor()
-        removeCGTap()
-    }
-
-    func openAccessibilitySettings() {
-        let urls = [
-            "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
-            "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_Accessibility",
-        ]
-        for s in urls {
-            if let url = URL(string: s), NSWorkspace.shared.open(url) { return }
-        }
-    }
-
-    private func applyCaptureMode() {
-        if captureMode {
-            installCGTap()
-        } else {
-            removeCGTap()
-        }
-    }
-
-    private func installNSMonitor() {
-        guard nsMonitor == nil else { return }
+        guard localMonitor == nil else { return }
         let mask: NSEvent.EventTypeMask = [
             .keyDown, .keyUp, .flagsChanged,
             .leftMouseDown, .leftMouseUp,
             .rightMouseDown, .rightMouseUp,
             .otherMouseDown, .otherMouseUp,
         ]
-        nsMonitor = NSEvent.addLocalMonitorForEvents(matching: mask) { [weak self] e in
-            self?.handleNSEvent(e)
+        localMonitor = NSEvent.addLocalMonitorForEvents(matching: mask) { [weak self] e in
+            self?.handle(e)
             return e
         }
     }
 
-    private func removeNSMonitor() {
-        if let m = nsMonitor {
+    func stop() {
+        if let m = localMonitor {
             NSEvent.removeMonitor(m)
-            nsMonitor = nil
+            localMonitor = nil
         }
     }
 
-    private func installCGTap() {
-        let opts: CFDictionary = [
-            kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true
-        ] as CFDictionary
-        let trusted = AXIsProcessTrustedWithOptions(opts)
-        if !trusted {
-            captureError = "Accessibility permission required. After granting in System Settings, toggle this off and back on."
-            captureMode = false
-            return
-        }
-
-        let mask = CGEventMask(
-            (1 << CGEventType.keyDown.rawValue) |
-            (1 << CGEventType.keyUp.rawValue) |
-            (1 << CGEventType.flagsChanged.rawValue)
-        )
-        let ctx = Unmanaged.passUnretained(self).toOpaque()
-        guard let t = CGEvent.tapCreate(
-            tap: .cgSessionEventTap,
-            place: .headInsertEventTap,
-            options: .defaultTap,
-            eventsOfInterest: mask,
-            callback: _cgTapCallback,
-            userInfo: ctx
-        ) else {
-            captureError = "CGEventTap creation failed. Accessibility may not be granted yet — try toggling off/on after granting."
-            captureMode = false
-            return
-        }
-        let src = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, t, 0)
-        CFRunLoopAddSource(CFRunLoopGetCurrent(), src, .commonModes)
-        CGEvent.tapEnable(tap: t, enable: true)
-        cgTap = t
-        cgSource = src
-        captureError = nil
-        captureActive = true
-    }
-
-    private func removeCGTap() {
-        if let t = cgTap { CGEvent.tapEnable(tap: t, enable: false) }
-        if let src = cgSource {
-            CFRunLoopRemoveSource(CFRunLoopGetCurrent(), src, .commonModes)
-        }
-        cgTap = nil
-        cgSource = nil
-        captureActive = false
-    }
-
-    // MARK: NSEvent path
-
-    private func handleNSEvent(_ event: NSEvent) {
+    private func handle(_ event: NSEvent) {
         switch event.type {
         case .keyDown:
-            // When capture mode is ON, the tap consumes keyboard events before
-            // they reach NSEvent. This branch only runs when capture is OFF.
             emitKey(direction: "down", keyCode: event.keyCode,
                     modifierFlags: event.modifierFlags,
                     chars: event.charactersIgnoringModifiers)
@@ -350,33 +248,7 @@ final class KeyMonitor: ObservableObject {
         }
     }
 
-    // MARK: CGEvent path (capture mode)
-
-    fileprivate func handleCGKey(type: CGEventType, keyCode: UInt16, flags: CGEventFlags) {
-        let nsFlags = nsModFlags(from: flags)
-        switch type {
-        case .keyDown:
-            emitKey(direction: "down", keyCode: keyCode, modifierFlags: nsFlags, chars: nil)
-        case .keyUp:
-            emitKey(direction: "up", keyCode: keyCode, modifierFlags: nsFlags, chars: nil)
-        case .flagsChanged:
-            emitFlags(keyCode: keyCode, modifierFlags: nsFlags)
-        default: break
-        }
-    }
-
-    private func nsModFlags(from cg: CGEventFlags) -> NSEvent.ModifierFlags {
-        var f: NSEvent.ModifierFlags = []
-        if cg.contains(.maskShift)       { f.insert(.shift) }
-        if cg.contains(.maskControl)     { f.insert(.control) }
-        if cg.contains(.maskAlternate)   { f.insert(.option) }
-        if cg.contains(.maskCommand)     { f.insert(.command) }
-        if cg.contains(.maskAlphaShift)  { f.insert(.capsLock) }
-        if cg.contains(.maskSecondaryFn) { f.insert(.function) }
-        return f
-    }
-
-    // MARK: Shared emitters
+    // MARK: Emitters
 
     private func emitKey(direction: String, keyCode: UInt16,
                          modifierFlags: NSEvent.ModifierFlags, chars: String?) {
@@ -448,32 +320,6 @@ final class KeyMonitor: ObservableObject {
         if f.contains(.function) { parts.append("fn") }
         return parts.joined(separator: ",")
     }
-}
-
-// CGEventTap callback — runs on the main run loop because we registered with
-// CFRunLoopGetCurrent() (called from the main thread). Returns nil to consume
-// the event so it never reaches other apps.
-private func _cgTapCallback(
-    proxy: CGEventTapProxy,
-    type: CGEventType,
-    event: CGEvent,
-    refcon: UnsafeMutableRawPointer?
-) -> Unmanaged<CGEvent>? {
-    guard let refcon = refcon else { return Unmanaged.passUnretained(event) }
-    let monitor = Unmanaged<KeyMonitor>.fromOpaque(refcon).takeUnretainedValue()
-
-    // OS may disable the tap on timeout / user-input events. Re-enable.
-    if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
-        // Caller (KeyMonitor.installCGTap) holds the CFMachPort; we just ignore.
-        return Unmanaged.passUnretained(event)
-    }
-
-    let keyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
-    let flags = event.flags
-    Task { @MainActor in
-        monitor.handleCGKey(type: type, keyCode: keyCode, flags: flags)
-    }
-    return nil  // consume — block from reaching other apps
 }
 
 // MARK: - Views
@@ -548,30 +394,6 @@ struct ContentView: View {
             }
             .padding(.horizontal)
             .padding(.top, 8)
-
-            // Capture mode row
-            HStack(spacing: 12) {
-                Toggle("Capture mode (block system shortcuts)", isOn: $monitor.captureMode)
-                    .toggleStyle(.switch)
-                if monitor.captureActive {
-                    Text("● BLOCKING ALL KEYBOARD INPUT — click toggle to stop")
-                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                        .foregroundColor(.red)
-                } else if let err = monitor.captureError {
-                    Text(err)
-                        .font(.caption)
-                        .foregroundColor(.orange)
-                    Button("Open Accessibility Settings") {
-                        monitor.openAccessibilitySettings()
-                    }
-                } else {
-                    Text("(NSEvent local — no permission needed)")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                Spacer()
-            }
-            .padding(.horizontal)
 
             Divider()
 
