@@ -22,6 +22,11 @@ xcrun swiftc \
 
 cp Info.plist "${APP_DIR}/Contents/Info.plist"
 
+# Bundle the app icon if present.
+if [ -f KeyCheck.icns ]; then
+    cp KeyCheck.icns "${APP_DIR}/Contents/Resources/KeyCheck.icns"
+fi
+
 # Pick a stable code-signing identity so TCC (Input Monitoring) survives rebuilds.
 # Priority:
 #   1. Apple Development / Developer ID (best — real Apple-issued cert)

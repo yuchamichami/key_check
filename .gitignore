@@ -1,5 +1,6 @@
 # Build artifacts
 KeyCheck.app/
+KeyCheck.iconset/
 *.dSYM/
 build/
 DerivedData/

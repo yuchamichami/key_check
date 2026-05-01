@@ -1,5 +1,9 @@
 # KeyCheck
 
+<p align="center">
+  <img src="Cluade_export/readme_hero_1600x800.png" alt="KeyCheck — macOS keyboard tester" width="100%">
+</p>
+
 自作キーボード(ZMK / QMK等)のキー入力を確認するための、シンプルなmacOS用キーテスター。
 
 Karabiner-EventViewer風の表示で、**全キーで音が鳴る** (Karabinerは modifier キーで音が鳴らない問題を解決)。音量は0-150%まで調整可能。
