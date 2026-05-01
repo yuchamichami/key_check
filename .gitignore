@@ -1,0 +1,16 @@
+# Build artifacts
+KeyCheck.app/
+*.dSYM/
+build/
+DerivedData/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*~
