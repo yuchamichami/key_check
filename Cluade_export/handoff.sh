@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # KeyCheck handoff — turn the iconset PNGs into .icns and update Info.plist.
-# Run from project root after copying export/ into the mac_keychec repo root.
+# Run from project root after copying export/ into the key_check repo root.
 set -euo pipefail
 
 ICONSET_SRC="export/iconset"

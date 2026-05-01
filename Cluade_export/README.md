@@ -31,7 +31,7 @@ export/
 
 ## Steps for Claude Code
 
-1. **Copy `export/` into the `mac_keychec` repo root.**
+1. **Copy `export/` into the `key_check` repo root.**
 2. **Run `bash export/handoff.sh`** — this:
    - Renames `_2x` → `@2x` (filesystem-safe → Apple's iconset convention)
    - Generates `KeyCheck.icns` via `iconutil`
@@ -45,7 +45,7 @@ export/
    ```
 5. **GitHub social preview:** upload `social_preview_1280x640.png` (generate from `KeyCheck Brand.html` if needed) via:
    ```bash
-   gh repo edit yuchamichami/mac_keychec --enable-issues  # placeholder; social preview is via the repo settings UI or REST
+   gh repo edit yuchamichami/key_check --enable-issues  # placeholder; social preview is via the repo settings UI or REST
    ```
    …or in repo Settings → Social preview, drag the PNG.
 6. **README**: drop `readme_hero_1600x800.png` at the top of README.md.

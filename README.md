@@ -8,6 +8,8 @@
 
 Karabiner-EventViewer風の表示で、**全キーで音が鳴る** (Karabinerは modifier キーで音が鳴らない問題を解決)。音量は0-150%まで調整可能。
 
+**ブラウザ版もあります → https://yuchamichami.github.io/key_check/** (インストール不要・即起動)
+
 ## 機能
 
 - **キー / マウスボタン / modifier の表示**: Karabinerスタイル (`{"key_code":"left_shift"}`) + USB HID usage code
@@ -44,7 +46,7 @@ NSEvent APIベースのため、以下のキーは取れません:
 
 ```bash
 git clone <このリポジトリ>
-cd mac_keychec
+cd key_check
 ./build.sh
 open KeyCheck.app
 ```
@@ -62,10 +64,14 @@ open KeyCheck.app
 
 ```
 .
-├── main.swift          # 全コード (UI + イベント監視 + 音)
-├── Info.plist          # アプリバンドル設定
-├── build.sh            # swiftc → .app バンドル化 + 自動署名
-├── setup_signing.sh    # 自己署名証明書作成 (任意)
+├── main.swift              # ネイティブ版コード (UI + イベント監視 + 音)
+├── Info.plist              # アプリバンドル設定
+├── build.sh                # swiftc → .app バンドル化 + 自動署名
+├── setup_signing.sh        # 自己署名証明書作成 (任意)
+├── KeyCheck.icns           # アプリアイコン
+├── docs/index.html         # ブラウザ版 (GitHub Pagesから配信)
+├── Cluade_export/          # アイコン・ヒーロー画像のソースアセット (Claude Design製)
+├── Cladesign_export2/      # UI リデザインのソースアセット (モックアップ・トークン)
 └── README.md
 ```
 
