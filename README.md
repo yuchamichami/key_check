@@ -95,3 +95,11 @@ python3 -m http.server 8765 --directory docs
 USB通信には既存ファームの`zmk__input_stream`を使用し、キーマップや設定の書き換えは行いません。
 プロトコルは[cormoranのStudioクライアント](https://github.com/cormoran/zmk-studio-ts-client/tree/custom-studio-protocol%2Bbluefy)と[入力ストリーム定義](https://github.com/cormoran/zmk-feature-input-stream/blob/main/proto/zmk/input_stream/input_stream.proto)を参照しています。
 自動テストは通信フレーム・動的な機能番号・押下/解放・接続/切断を模擬します。実機のUSB、左右間通信、音の確認は別途必要です。
+
+### 英数・かな・変換の検査
+
+ブラウザ版は`Lang1`を`japanese_kana`、`Lang2`を`japanese_eisuu`として表示します。`code`が空でも、識別できる`key`名や変換キーの旧イベント値から判定します。IMEの汎用イベント（`Process` / 229）だけでは特定の日本語キーを押したと推定しません。
+
+「ブラウザ入力の受信状況」にはフィルター前の`keydown` / `keyup`が表示されます。ページにフォーカスがある状態でも件数が増えず、Karabinerにだけ表示される場合は、ページがキーイベントを受け取れていません。JavaScriptの名前変換だけでは復元できないため、上のUSB物理キー検査で直接通知を受信してください。
+
+日本語キー判定を含むテスト: `node --test tests/*.test.*`

@@ -906,6 +906,11 @@
     <details><summary>接続・検査のヒント</summary><p>PC版Chrome / EdgeでUSBポートを選択します。応答がない場合はもう一方のCorcellポートを選択してください。USB出力はL3+U。最新のdya-studio設定ではUSB接続時のアンロック操作は不要です。ブラウザへの許可が残っていれば、同じポートの抜き差し後はこのタブで再接続を試みます。別個体では再度USBを選択してください。</p><p>キーは1つずつ押して離してください。通常のキー動作も有効なので、レイヤーキーとの同時押しは避けてください。緑は押下・解放を受信済み、青は押下中。表示は初期配列の物理位置です。切断時は結果をクリアします。この検査はキーの導通確認用で、チャタリングや無線・ポインタなどの検査は別途必要です。</p></details>
   </section>
 
+  <div id="keyboardDiagnostics" style="margin:8px 24px;color:#a8bad4;font-size:12px;line-height:1.7">
+    <strong>ブラウザ入力の受信状況</strong>
+    <div id="rawKeyboardStatus" role="status">キーイベント未受信 — このページをクリックしてキーを押してください。</div>
+    <div>英数・かながここにも出ない場合、ブラウザまでキー通知が届いていません。USB物理キー検査を使うとOSのIME処理を経由せず確認できます。</div>
+  </div>
   <div class="log-header">
     <div class="title">Keyboard &amp; pointing events</div>
     <div class="mode-switcher" id="modeSwitcher">
@@ -940,6 +945,7 @@
   </div>
 </div>
 
+<script src="./keyboard-input.js"></script>
 <script>
 'use strict';
 
@@ -1025,8 +1031,11 @@ const HID_MAP = {
   KanaMode:   ['international2',      0x88],
   Convert:    ['japanese_pc_xfer',    0x8A],
   NonConvert: ['japanese_pc_nfer',    0x8B],
-  Lang1:      ['japanese_pc_katakana',0x90],
-  Lang2:      ['japanese_pc_hiragana',0x91],
+  Lang1:      ['japanese_kana',       0x90],
+  Lang2:      ['japanese_eisuu',      0x91],
+  Lang3:      ['japanese_pc_katakana',0x92],
+  Lang4:      ['japanese_pc_hiragana',0x93],
+  Lang5:      ['japanese_pc_zenkaku_hankaku',0x94],
   // misc
   ContextMenu:    ['menu',         0x76],
   AudioVolumeMute:['mute',         0x7F],
@@ -3287,13 +3296,12 @@ function emit(direction, code, e, isMouse) {
   const name = map ? map[0] : `key_code_${code}`;
   const usage = map ? map[1] : 0;
   const chars = (e.key && e.key.length === 1) ? e.key : '';
-  const extra = chars
-    ? `chars: "${chars}"  code: ${code}`
-    : `code: ${code}`;
+  const raw = `code: ${e.code || '(empty)'}  key: ${e.key || '(empty)'}  keyCode: ${e.keyCode}  composing: ${!!e.isComposing}`;
+  const extra = chars ? `chars: ${JSON.stringify(chars)}  ${raw}` : raw;
   const t = track(direction, code);
   addEvent({
     direction,
-    label: `{"key_code":"${name}"}`,
+    label: JSON.stringify({key_code: name}),
     flagsText: modifiersFromEvent(e),
     usagePage: 0x07,
     usage,
@@ -3453,8 +3461,16 @@ function renderLog() {
   document.getElementById('evtCount').textContent = state.events.length;
 }
 
+// Capture the browser's actual event before filtering repeats or routing USB mode.
+let rawKeyboardCount = 0;
+const isMacKeyboard = /Mac/.test(navigator.platform);
+function recordRawKeyboard(e) {
+  document.getElementById('rawKeyboardStatus').textContent =
+    `受信 ${++rawKeyboardCount}件 · ${e.type} · code=${e.code || '(empty)'} · key=${e.key || '(empty)'} · keyCode=${e.keyCode} · IME=${!!e.isComposing}`;
+}
 // keyboard
 window.addEventListener('keydown', e => {
+  recordRawKeyboard(e);
   ensureAudio();
   // Block default browser shortcuts where we can, so the page stays focused.
   // Cmd+W/Q/T/N/R can't be intercepted reliably — those will close/reload.
@@ -3462,14 +3478,16 @@ window.addEventListener('keydown', e => {
     e.preventDefault();
   }
   if (e.repeat) return;
-  emit('down', e.code, e, false);
-});
+  emit('down', KeyCheckKeyboardInput.resolve(e, HID_MAP, isMacKeyboard), e, false);
+}, {capture: true});
 window.addEventListener('keyup', e => {
+  recordRawKeyboard(e);
+  ensureAudio();
   if (!(e.metaKey && ['w','q','t','n','r','l','f'].includes((e.key || '').toLowerCase()))) {
     e.preventDefault();
   }
-  emit('up', e.code, e, false);
-});
+  emit('up', KeyCheckKeyboardInput.resolve(e, HID_MAP, isMacKeyboard), e, false);
+}, {capture: true});
 // mouse
 window.addEventListener('mousedown', e => {
   ensureAudio();
