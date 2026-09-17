@@ -65,3 +65,41 @@ open KeyCheck.app
 ## License
 
 MIT
+
+## Corcellの出荷前キー検査（ブラウザ版）
+
+DYA Studioを開かずに、KeyCheckからUSB経由で物理キーを検査できます。
+レイヤー切替など、PCにキーコードを送らない親指キーも押下音と色で確認できます。
+Macアプリ版にはこの機能は含まれません。
+
+1. PC版Chrome / EdgeでKeyCheckを開き、**dya-studio版ファームのCorcell右側**をUSB接続します。左側も電源を入れます。
+2. **USBを選んで検査開始**でCorcellのポートを選びます。DYA Studioなど、同じポートを使うタブは閉じてください。
+3. キーを**1つずつ押して離す**と、押下時に音が鳴り、確認済みのキーが緑になります。音色・音量は既存のコントロールで調整できます。
+4. **50 / 50**で全キーの押下・解放を確認済みです。必要なら**結果を保存**でJSONを保存します。
+5. 別の個体を接続するときはUSBを選び直します。同じポートの抜き差しでは、このタブが開いている間は再接続を試みます。切断すると検査結果はクリアされます。
+
+初回のポート選択はブラウザの許可操作なので省略できません。ポートが2つ表示されて応答がない場合は、もう一方を選んでください。USB入力が出ない場合はL3+UでUSB出力にします。現行dya-studio設定ではUSBのStudioアンロック操作は不要です。
+
+表示はCorcellの初期配列に対応する50個の物理位置です。通常のキー動作も有効なので、検査中はレイヤーキーと他のキーを同時押ししないでください。押下・解放の欠落や不整合を検出した場合は「検査をやり直す」で再検査してください。
+
+これは物理キーの導通確認です。チャタリングの定量検査、Bluetooth、ポインタ、電池などの出荷判定は別途必要です。結果の保存先はローカルで、キー情報をサーバーへ送信しません。
+
+### 開発・検証
+
+```sh
+node --test tests/corcell.test.mjs
+python3 -m http.server 8765 --directory docs
+```
+
+`http://localhost:8765`で確認できます（HTMLの直接ファイル起動は非対応）。
+USB通信には既存ファームの`zmk__input_stream`を使用し、キーマップや設定の書き換えは行いません。
+プロトコルは[cormoranのStudioクライアント](https://github.com/cormoran/zmk-studio-ts-client/tree/custom-studio-protocol%2Bbluefy)と[入力ストリーム定義](https://github.com/cormoran/zmk-feature-input-stream/blob/main/proto/zmk/input_stream/input_stream.proto)を参照しています。
+自動テストは通信フレーム・動的な機能番号・押下/解放・接続/切断を模擬します。実機のUSB、左右間通信、音の確認は別途必要です。
+
+### 英数・かな・変換の検査
+
+ブラウザ版は`Lang1`を`japanese_kana`、`Lang2`を`japanese_eisuu`として表示します。`code`が空でも、識別できる`key`名や変換キーの旧イベント値から判定します。IMEの汎用イベント（`Process` / 229）だけでは特定の日本語キーを押したと推定しません。
+
+「ブラウザ入力の受信状況」にはフィルター前の`keydown` / `keyup`が表示されます。ページにフォーカスがある状態でも件数が増えず、Karabinerにだけ表示される場合は、ページがキーイベントを受け取れていません。JavaScriptの名前変換だけでは復元できないため、上のUSB物理キー検査で直接通知を受信してください。
+
+日本語キー判定を含むテスト: `node --test tests/*.test.*`
