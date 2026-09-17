@@ -802,6 +802,19 @@
     color: var(--accent-cyan);
     font-weight: 700;
   }
+
+  #corcellTest {margin:12px 24px;padding:18px;border:1px solid #394562;border-radius:14px;background:#111b30;color:#d9e7ff;}
+  .corcell-heading {display:flex;gap:16px;flex-wrap:wrap;align-items:baseline}.corcell-heading span,#corcellTest details {color:#a8bad4;font-size:12px}
+  .corcell-actions {display:flex;gap:8px;flex-wrap:wrap;margin:14px 0}
+  .corcell-actions button {background:#243954;color:#e4f4ff;border:1px solid #506785;border-radius:7px;padding:9px 12px;cursor:pointer}
+  .corcell-actions button:disabled {opacity:.45;cursor:default}
+  #corcellTest p {font-size:13px;line-height:1.7;margin:8px 0}
+  .physical-scroll {overflow-x:auto}.physical-keys {min-width:620px;display:grid;grid-template-columns:repeat(14,minmax(0,1fr));gap:5px;margin:14px 0}
+  .physical-key {padding:11px 0;text-align:center;background:#202c42;border:1px solid #455370;border-radius:6px;font-size:11px}
+  .physical-key:nth-child(7),.physical-key:nth-child(19),.physical-key:nth-child(45) {grid-column:9}
+  .physical-key:nth-child(13),.physical-key:nth-child(25),.physical-key:nth-child(39) {grid-column:1}
+  .physical-key.done {background:#184636;border-color:#48b889;color:#a7f7c5}.physical-key.held {background:#277396;border-color:#7ae0ff;color:white}.passed {color:#a7f7c5}
+
 </style>
 </head>
 <body>
@@ -883,6 +896,15 @@
       <div class="keycap action" id="btnClear">CLEAR</div>
     </div>
   </header>
+
+
+  <section id="corcellTest" aria-label="Corcell USB物理キー検査">
+    <div class="corcell-heading"><strong>Corcell · USB物理キー検査</strong><span>親指・レイヤーキーも音でチェック</span></div>
+    <div class="corcell-actions"><button data-connect>USBを選んで検査開始</button><button data-disconnect disabled>切断</button><button data-reset>検査をやり直す</button><button data-report>結果を保存</button></div>
+    <p data-status role="status">dya-studio版のCorcell右側をUSB接続してください。DYA Studioを開く必要はありません。</p>
+    <div class="physical-scroll"><div data-keys class="physical-keys"></div></div><p data-progress aria-live="polite"></p>
+    <details><summary>接続・検査のヒント</summary><p>PC版Chrome / EdgeでUSBポートを選択します。応答がない場合はもう一方のCorcellポートを選択してください。USB出力はL3+U。最新のdya-studio設定ではUSB接続時のアンロック操作は不要です。ブラウザへの許可が残っていれば、同じポートの抜き差し後はこのタブで再接続を試みます。別個体では再度USBを選択してください。</p><p>キーは1つずつ押して離してください。通常のキー動作も有効なので、レイヤーキーとの同時押しは避けてください。緑は押下・解放を受信済み、青は押下中。表示は初期配列の物理位置です。切断時は結果をクリアします。この検査はキーの導通確認用で、チャタリングや無線・ポインタなどの検査は別途必要です。</p></details>
+  </section>
 
   <div class="log-header">
     <div class="title">Keyboard &amp; pointing events</div>
@@ -3246,6 +3268,7 @@ function track(direction, id) {
 }
 
 function emit(direction, code, e, isMouse) {
+  if (window.corcellPhysicalMode) return;
   if (isMouse) {
     const btn = (e.button ?? 0) + 1;
     const t = track(direction, `mouse.${btn}`);
@@ -3480,8 +3503,16 @@ document.getElementById('kbSelect').addEventListener('change', e => {
 document.getElementById('markDeadBtn').addEventListener('click', markUntypedDead);
 document.getElementById('resetMatrixBtn').addEventListener('click', resetMatrix);
 
+// Physical stream has its own coverage; do not double-count host HID events.
+window.addEventListener('corcell-audio', ensureAudio);
+window.addEventListener('corcell-silence', stopSynthAll);
+window.addEventListener('corcell-key', ({ detail }) => {
+  if (detail.pressed) { if (state.tone === 'synth') startSynth(); else playClick(); }
+  else if (state.tone === 'synth') stopSynth();
+});
 // initial render
 updateKnob();
 </script>
+<script type="module" src="./corcell-test.mjs"></script>
 </body>
 </html>
