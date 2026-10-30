@@ -64,7 +64,7 @@ export async function identifyCoreX(transport, digest=bytes=>crypto.subtle.diges
     throw new Error('この点検はCoreX rev1.0用です。');
   const firmware=view(await command([2,4],2)).getUint32(2);
   if(firmware<2821)throw Object.assign(new Error('右側ファームを更新すると、レイヤーキーも点検できます。'),{needsUpdate:true});
-  if(![2821,2822,2823].includes(firmware) || (await command([0x11],1))[1]!==7)
+  if(![2821,2822,2823,2824].includes(firmware) || (await command([0x11],1))[1]!==7)
     throw new Error('このファームのキー位置を確認できません。');
   const size=view(await command([0xfe,1])).getUint32(0,true);
   if(size!==2116)throw new Error('本体のキー配列が一致しません。');
