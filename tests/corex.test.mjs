@@ -44,7 +44,7 @@ test('transport rejects every write/unlock/reset request before USB',async()=>{
   }
   assert.equal(d.requests.length,0);await t.close();
 });
-for(const firmware of [2821,2822])test(`checks UID, version ${firmware} and complete definition hash before accepting CoreX`,async()=>{
+for(const firmware of [2821,2822,2823])test(`checks UID, version ${firmware} and complete definition hash before accepting CoreX`,async()=>{
   const d=new Device();d.firmware=firmware;await d.open();const t=new CoreXTransport(d);
   assert.equal((await identifyCoreX(t)).firmware,firmware);
   assert.equal(d.requests.filter(r=>r[0]===0xfe&&r[1]===2).length,67);
@@ -67,7 +67,7 @@ test('L1 L4 L6 and unassigned positions produce independent down/up events',()=>
   const reply=new Uint8Array(32);reply.set([2,3]);reply[5]=24;reply[9]=24;
   const edges=new PhysicalEdges(),down=edges.update(decodeMatrix(reply),10);
   assert.deepEqual(down.map(e=>e.id),[24,25,52,53]);
-  assert.deepEqual(down.map(e=>physicalLabel(Math.floor(e.id/7),e.id%7)),['右・未割当キー','L6','L1','L4']);
+  assert.deepEqual(down.map(e=>physicalLabel(Math.floor(e.id/7),e.id%7)),['トラボ裏','L6','L1','L4']);
   assert.deepEqual(edges.update(decodeMatrix(reply),15),[]);
   reply.fill(0,2);const up=edges.update(decodeMatrix(reply),110);
   assert.equal(up.length,4);assert.ok(up.every(e=>e.direction==='up'&&e.holdMs===100));
