@@ -802,6 +802,11 @@
     color: var(--accent-cyan);
     font-weight: 700;
   }
+  .corex-connect { display:flex; flex-wrap:wrap; gap:8px 14px; align-items:center; padding:10px 16px; margin-top:12px; border:1px solid rgba(91,209,255,.24); border-radius:10px; background:rgba(46,139,255,.06); font-size:12px; line-height:1.5; }
+  .corex-connect button { flex:none; cursor:pointer; }
+  .corex-connect a { color:#5BD1FF; }
+  .corex-connect [hidden] { display:none; }
+  .corex-connect button:disabled { opacity:.5; cursor:wait; }
 </style>
 </head>
 <body>
@@ -884,6 +889,11 @@
     </div>
   </header>
 
+  <div class="corex-connect">
+    <button class="matrix-btn" id="corexConnect" type="button">CoreXを接続</button>
+    <span id="corexStatus" role="status">CoreXのレイヤーキーも点検できます。初回はUSB接続を許可してください。</span>
+    <a id="corexUpdate" href="https://corex-studio.pages.dev/firmware?board=raytac#downloads" target="_blank" rel="noopener" hidden>右側ファームを更新</a>
+  </div>
   <div class="log-header">
     <div class="title">Keyboard &amp; pointing events</div>
     <div class="mode-switcher" id="modeSwitcher">
@@ -3359,7 +3369,7 @@ function appendRow(e) {
     const cls = e.holdMs < 50 ? 'short' : (e.holdMs < 200 ? 'tap' : 'hold');
     const chip = document.createElement('div');
     chip.className = `held-chip ${cls}`;
-    chip.textContent = `held: ${e.holdMs}ms`;
+    chip.textContent = `held: ${e.physical?'~':''}${e.holdMs}ms`;
     meta.appendChild(chip);
   }
 
@@ -3386,13 +3396,15 @@ function appendRow(e) {
   // right cols
   const right = document.createElement('div');
   right.className = 'right-cols';
-  right.appendChild(makeCol('PAGE',
+  right.appendChild(makeCol(e.physical?'ROW':'PAGE',
     `${e.usagePage} (0x${e.usagePage.toString(16).padStart(4,'0')})`));
-  right.appendChild(makeCol('USAGE',
+  right.appendChild(makeCol(e.physical?'COL':'USAGE',
     `${e.usage} (0x${e.usage.toString(16).padStart(4,'0')})`));
   row.appendChild(right);
 
   document.getElementById('logScroll').appendChild(row);
+  const rows=document.getElementById('logScroll').querySelectorAll('.row');
+  if(rows.length>state.maxEvents)rows[0].remove();
   // auto-scroll
   const sc = document.getElementById('logScroll');
   sc.scrollTop = sc.scrollHeight;
@@ -3430,6 +3442,20 @@ function renderLog() {
   document.getElementById('evtCount').textContent = state.events.length;
 }
 
+// Raw CoreX switch events do not fabricate ordinary keyboard keycodes.
+let corexPhysicalActive=false;
+window.addEventListener('corex-inspection',e=>{
+  corexPhysicalActive=e.detail.active;
+  if(corexPhysicalActive) {
+    setMatrixMode(false);
+    document.querySelectorAll('.mode-btn').forEach(b=>b.classList.toggle('selected',b.dataset.mode==='events'));
+  } else {
+    stopSynthAll();state.pressStart={};state.lastDown={};
+  }
+  document.querySelector('[data-mode="matrix"]').disabled=corexPhysicalActive;
+});
+window.addEventListener('corex-key',e=>addEvent(e.detail));
+
 // keyboard
 window.addEventListener('keydown', e => {
   ensureAudio();
@@ -3438,14 +3464,14 @@ window.addEventListener('keydown', e => {
   if (!(e.metaKey && ['w','q','t','n','r','l','f'].includes((e.key || '').toLowerCase()))) {
     e.preventDefault();
   }
-  if (e.repeat) return;
+  if (e.repeat || corexPhysicalActive) return;
   emit('down', e.code, e, false);
 });
 window.addEventListener('keyup', e => {
   if (!(e.metaKey && ['w','q','t','n','r','l','f'].includes((e.key || '').toLowerCase()))) {
     e.preventDefault();
   }
-  emit('up', e.code, e, false);
+  if(!corexPhysicalActive)emit('up', e.code, e, false);
 });
 // mouse
 window.addEventListener('mousedown', e => {
@@ -3483,5 +3509,6 @@ document.getElementById('resetMatrixBtn').addEventListener('click', resetMatrix)
 // initial render
 updateKnob();
 </script>
+<script type="module" src="./corex-check.mjs"></script>
 </body>
 </html>
