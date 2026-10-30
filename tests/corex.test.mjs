@@ -44,9 +44,9 @@ test('transport rejects every write/unlock/reset request before USB',async()=>{
   }
   assert.equal(d.requests.length,0);await t.close();
 });
-test('checks UID, version and complete definition hash before accepting CoreX',async()=>{
-  const d=new Device();await d.open();const t=new CoreXTransport(d);
-  assert.equal((await identifyCoreX(t)).firmware,2821);
+for(const firmware of [2821,2822])test(`checks UID, version ${firmware} and complete definition hash before accepting CoreX`,async()=>{
+  const d=new Device();d.firmware=firmware;await d.open();const t=new CoreXTransport(d);
+  assert.equal((await identifyCoreX(t)).firmware,firmware);
   assert.equal(d.requests.filter(r=>r[0]===0xfe&&r[1]===2).length,67);
   assert.equal(d.requests.some(r=>r[0]===2&&r[1]===3),false);await t.close();
 });
